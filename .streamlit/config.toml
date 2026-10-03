@@ -1,0 +1,13 @@
+[theme]
+base = "light"
+primaryColor = "#F37321"
+backgroundColor = "#F7F7F8"
+secondaryBackgroundColor = "#F8F8F9"
+textColor = "#1F2329"
+borderColor = "#E8E8EA"
+font = "Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+baseRadius = "8px"
+showSidebarBorder = false
+
+[client]
+toolbarMode = "minimal"

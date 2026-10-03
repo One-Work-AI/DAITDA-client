@@ -1,0 +1,20 @@
+[project]
+name = "daitda"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "zeon0xx0", email = "jihyon5615@naver.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pypdfium2>=5.13.0",
+    "streamlit[pdf]>=1.64.0",
+]
+
+[project.scripts]
+daitda = "daitda:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
