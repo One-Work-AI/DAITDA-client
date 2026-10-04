@@ -1,27 +1,3 @@
-# from collections.abc import Callable
-# from pathlib import Path
-
-# import streamlit as st
-
-# from components.sidebar import render_sidebar
-
-# STYLE_PATH = Path(__file__).resolve().parent.parent / "styles" / "global.css"
-
-
-# def load_global_styles() -> None:
-#     css = STYLE_PATH.read_text(encoding="utf-8")
-#     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-
-
-# def render_layout(content: Callable[[], None], page_key: str) -> None:
-#     side, main = st.columns([1, 5], gap="medium")
-#     with side:
-#         render_sidebar(page_key)
-#     with main:
-#         with st.container(key="main"):
-#             content()
-
-
 from collections.abc import Callable
 from pathlib import Path
 
@@ -29,18 +5,26 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from components.sidebar import render_sidebar
+from utils.navigation import go
+from utils.session import current_user
 
 STYLE_PATH = Path(__file__).resolve().parent.parent / "styles" / "global.css"
+
+HEADER_CLICK_FIX = """
+header[data-testid="stHeader"], [data-testid="stToolbar"] { pointer-events: none !important; }
+[data-testid="stExpandSidebarButton"], [data-testid="stToolbar"] button { pointer-events: auto !important; }
+"""
 
 
 def load_global_styles() -> None:
     css = STYLE_PATH.read_text(encoding="utf-8")
-    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{css}{HEADER_CLICK_FIX}</style>", unsafe_allow_html=True)
 
 
 def render_layout(content: Callable[[], None], page_key: str) -> None:
-    # 태블릿·모바일: Streamlit 기본 사이드바를 '서랍'으로 사용 (왼쪽 위 > 버튼으로 열고 닫음)
-    # PC에서는 CSS로 숨기고, 아래의 고정 사이드바를 그대로 사용
+    if current_user() is None:
+        go("login")
+
     with st.sidebar:
         render_sidebar(page_key, prefix="drawer_")
         if st.session_state.get("page_entered"):
@@ -53,8 +37,6 @@ def render_layout(content: Callable[[], None], page_key: str) -> None:
         with st.container(key="main"):
             content()
 
-
-# 서랍 메뉴로 페이지를 옮기면 서랍을 자동으로 닫음 (태블릿·모바일에서만)
 _CLOSE_DRAWER_JS = """
 <script>
   // nonce: {nonce}  (내용이 매번 달라야 Streamlit이 스크립트를 다시 실행함)

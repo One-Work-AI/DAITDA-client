@@ -1,15 +1,18 @@
 import pandas as pd
 import streamlit as st
 
-from components.ui import icon, page_header, render_html
-from data.dummy import INQUIRY_TYPES
-from utils.inquiry import change_signature, latest_activity
+from components.ui import icon, page_header, pagination, render_html
+from utils import api
+from utils.api import fmt_time
+from utils.inquiry import categories, category, items_of, list_signature, status_label, total_pages
 from utils.live import live_watch
 from utils.navigation import go
-from utils.store import inquiries as all_inquiries
+from utils.session import load
 
 
-STATUS_TABS = ["검토대기", "전체", "답변완료"]
+STATUS_TABS = ["전체", "검토대기", "답변완료"]
+TAB_CODE = {"검토대기": "pending", "전체": "all", "답변완료": "done"}   
+PAGE_SIZE = 100   
 
 COLUMNS = [
     "문의번호",
@@ -38,33 +41,35 @@ def _ellipsis(value: str, max_length: int) -> str:
 
     return value[: max_length - 1] + "…"
 
+def _set_page(n: int) -> None:
+    st.session_state.review_page = n
+
+
+def _reset_page() -> None:
+    st.session_state.review_page = 1
+
+
 def render() -> None:
     page_header(
         "문의 검토",
         "AI가 답변하지 못한 문의를 확인하고 답변을 승인해 주세요.",
     )
 
-    inquiries = all_inquiries()
+    st.session_state.setdefault("review_status", "검토대기")
+    st.session_state.setdefault("review_type", "전체")
+    st.session_state.setdefault("review_page", 1)
 
-    live_watch(
-        "review",
-        lambda: tuple(
-            change_signature(i)
-            for i in all_inquiries()
-        ),
-    )
+    tab = TAB_CODE.get(st.session_state.review_status or "검토대기", "pending")
+    cat = None if st.session_state.review_type in (None, "전체") else st.session_state.review_type
+    q = (st.session_state.get("review_search") or "").strip() or None
+    page = st.session_state.review_page
 
-    counts = {
-        "검토대기": sum(
-            i["status"] == "검토대기"
-            for i in inquiries
-        ),
-        "전체": len(inquiries),
-        "답변완료": sum(
-            i["status"] == "답변완료"
-            for i in inquiries
-        ),
-    }
+    res = load(api.list_reviews, tab, q, cat, page, PAGE_SIZE)
+    live_watch("review", lambda: list_signature(api.list_reviews(tab, q, cat, page, PAGE_SIZE)),
+               initial=list_signature(res))
+
+    raw_counts = res.get("counts") or {}
+    counts = {label: raw_counts.get(code, 0) for label, code in TAB_CODE.items()}
 
     if counts["검토대기"]:
         render_html(
@@ -80,16 +85,6 @@ def render() -> None:
             """
         )
 
-    st.session_state.setdefault(
-        "review_status",
-        "검토대기",
-    )
-
-    st.session_state.setdefault(
-        "review_type",
-        "전체",
-    )
-
     with st.container(key="card_review_filters"):
         f1, f2 = st.columns(
             [1, 1.3],
@@ -103,6 +98,7 @@ def render() -> None:
                     STATUS_TABS,
                     key="review_status",
                     format_func=lambda s: f"{s} {counts[s]}",
+                    on_change=_reset_page,
                 )
                 or "검토대기"
             )
@@ -112,47 +108,23 @@ def render() -> None:
                 placeholder="고객명, 문의번호, 상품명 검색",
                 icon=":material/search:",
                 key="review_search",
+                on_change=_reset_page,
             )
 
         with f2:
             inquiry_type = (
                 st.pills(
                     "문의 유형",
-                    ["전체", *INQUIRY_TYPES],
+                    ["전체", *categories()],
                     key="review_type",
+                    on_change=_reset_page,
                 )
                 or "전체"
             )
 
 
-    if status == "전체":
-        items = inquiries
-    else:
-        items = [
-            i
-            for i in inquiries
-            if i["status"] == status
-        ]
-
-    if inquiry_type != "전체":
-        items = [
-            i
-            for i in items
-            if i["type"] == inquiry_type
-        ]
-
-    if keyword:
-        items = [
-            i
-            for i in items
-            if (
-                keyword in i["customer"]
-                or keyword in i["id"]
-                or keyword in i["product"]
-            )
-        ]
-
-    items = sorted(items, key=latest_activity, reverse=True) 
+    items = items_of(res)
+    total = total_pages(res, PAGE_SIZE)
 
     with st.container(key="card_review_table"):
         render_html(
@@ -165,33 +137,31 @@ def render() -> None:
         )
 
         if not items:
-            st.info("조건에 맞는 문의가 없어요.")
+         
             return
 
         df = pd.DataFrame(
             [
                 {
-                    "문의번호": i["id"],
-                    "고객명": i["customer"],
-                    "문의 유형": i["type"],
-                    "상태": i["status"],
+                    "문의번호": i["inquiry_no"],
+                    "고객명": i.get("customer_name") or "-",
+                    "문의 유형": category(i),
+                    "상태": status_label(i),
 
                     # 긴 값만 말줄임
                     "상품명": _ellipsis(
-                        i["product"],
+                        i.get("product_name"),
                         14,
                     ),
                     "이메일": _ellipsis(
-                        i["email"],
+                        i.get("customer_email"),
                         18,
                     ),
 
-                    "연락처": i["phone"],
-                    "등록일자": i["created_at"],
-                    "답변완료 시간": (
-                        i["answered_at"]
-                        or "-"
-                    ),
+                    "연락처": i.get("customer_phone") or "-",
+                    "등록일자": fmt_time(i.get("created_at")),
+                    "답변완료 시간": ("-" if i.get("status_code") == "REVIEWING"
+                                      else fmt_time(i.get("answered_at"))),
                 }
                 for i in items
             ],
@@ -261,6 +231,7 @@ def render() -> None:
 
            height="stretch", 
         )
+        pagination(page, total, _set_page)
 
         if event.selection.cells:
             row, _ = event.selection.cells[0]
