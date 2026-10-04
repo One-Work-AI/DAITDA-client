@@ -1,81 +1,120 @@
-import math
+"""고객 - 문의 내역. GET /api/conversations (서버에서 상태·유형·검색·페이지 처리, 최근 대화순)
+
+필터 영역(상태 + 건수 / 검색 / 문의 유형)은 관리자 '문의 검토'와 같은 구성입니다.
+- 상담 중: 채팅이 열려 있음 / 답변완료: 고객이 채팅을 종료했거나 5분 동안 메시지가 없어 자동 종료됨
+"""
 from html import escape
 
 import streamlit as st
 
-from components.ui import badge, page_header, render_html, type_pill
-from data.dummy import CUSTOMER_STATUSES
-from components.ui import badge, icon, page_header, render_html, type_pill                   
-from utils.inquiry import change_signature, customer_status, first_question, latest_activity  
+from components.ui import badge, icon, page_header, pagination, render_html, type_pill
+from utils import api
+from utils.api import fmt_time
+from utils.inquiry import categories, category, items_of, list_signature, status_label, total_pages
 from utils.live import live_watch
 from utils.navigation import go
-from utils.session import current_user, customer_inquiries
+from utils.session import load
 
 PAGE_SIZE = 5
+STATUS_TABS = ["전체", "상담 중", "답변완료"]
+STATUS_CODE = {"전체": None, "상담 중": "CHATTING", "답변완료": "ANSWERED"}   
+COUNT_KEY = {"전체": "all", "상담 중": "CHATTING", "답변완료": "ANSWERED"}
 
 
 def _set_page(n: int) -> None:
     st.session_state.history_page = n
 
 
+def _reset_page() -> None:
+    st.session_state.history_page = 1
+
+
 def render() -> None:
     page_header("문의 내역", "지금까지 남긴 문의와 답변을 확인할 수 있어요.")
     st.session_state.setdefault("history_page", 1)
-    if st.session_state.get("history_status") not in ["전체", *CUSTOMER_STATUSES, None]:
+    if st.session_state.get("history_status") not in [*STATUS_TABS, None]:
         st.session_state.history_status = "전체"
     st.session_state.setdefault("history_status", "전체")
+    st.session_state.setdefault("history_type", "전체")
 
-    name = current_user()["name"]
-    live_watch("history", lambda: tuple(change_signature(i) for i in customer_inquiries(name)))
+    status = STATUS_CODE.get(st.session_state.history_status or "전체")
+    cat = None if st.session_state.history_type in (None, "전체") else st.session_state.history_type
+    q = (st.session_state.get("history_search") or "").strip() or None
+    page = st.session_state.history_page
+
+    res = load(api.list_conversations, status, q, page, PAGE_SIZE, cat)
+    total = total_pages(res, PAGE_SIZE)
+    if page > total:
+        st.session_state.history_page = total
+        st.rerun()
+    live_watch("history", lambda: list_signature(api.list_conversations(status, q, page, PAGE_SIZE, cat)),
+               interval=5, initial=list_signature(res))
+
+    raw_counts = res.get("counts") or {}
+    counts = {label: raw_counts.get(key, 0) for label, key in COUNT_KEY.items()}
 
     with st.container(key="card_history_filters"):
-        status_col, search_col = st.columns([1.15, 1.85], vertical_alignment="bottom")
-        with status_col:
-            st.segmented_control("상담 상태", ["전체", *CUSTOMER_STATUSES], key="history_status",
-                                 on_change=_set_page, args=(1,))
-        with search_col:
-            keyword = st.text_input("검색", placeholder="문의 내용 검색", icon=":material/search:",
-                                    key="history_search", on_change=_set_page, args=(1,))
+        f1, f2 = st.columns(
+            [1, 1.3],
+            vertical_alignment="bottom",
+        )
 
-    items = customer_inquiries(name)
-    status = st.session_state.history_status or "전체"
-    if status != "전체":
-        items = [i for i in items if customer_status(i) == status]
-    if keyword:
-        items = [i for i in items if keyword in first_question(i)]
+        with f1:
+            st.segmented_control(
+                "문의 상태",
+                STATUS_TABS,
+                key="history_status",
+                format_func=lambda s: f"{s} {counts[s]}",
+                on_change=_reset_page,
+            )
 
-    items = sorted(items, key=latest_activity, reverse=True)
+            st.text_input(
+                "검색",
+                placeholder="문의 내용, 상품명 검색",
+                icon=":material/search:",
+                key="history_search",
+                on_change=_reset_page,
+            )
+
+        with f2:
+            st.pills(
+                "문의 유형",
+                ["전체", *categories(admin=False)],
+                key="history_type",
+                on_change=_reset_page,
+            )
+
+    items = items_of(res)
 
     with st.container(key="card_history_list"):
+        render_html(
+            f"""
+            <p class="table-caption">
+                <b>{len(items)}건</b>
+            </p>
+            """
+        )
+
         if not items:
             st.info("조건에 맞는 문의가 없어요.")
-            return
+        else:
+            for item in items:
+                _render_card(item)
 
-        total = max(1, math.ceil(len(items) / PAGE_SIZE))
-        current = min(st.session_state.history_page, total)
-        for item in items[(current - 1) * PAGE_SIZE: current * PAGE_SIZE]:
-            _render_card(item)
-
-        with st.container(key="pagination", horizontal=True, horizontal_alignment="center", gap="small"):
-            st.button("", icon=":material/chevron_left:", key="pg_prev", disabled=current == 1,
-                      on_click=_set_page, args=(current - 1,))
-            for n in range(1, total + 1):
-                st.button(str(n), key=f"pg_{n}", type="primary" if n == current else "secondary",
-                          on_click=_set_page, args=(n,))
-            st.button("", icon=":material/chevron_right:", key="pg_next", disabled=current == total,
-                      on_click=_set_page, args=(current + 1,))
+            pagination(page, total, _set_page)
 
 
 def _render_card(item: dict) -> None:
-    with st.container(key=f"hist_item_{item['id']}"):  
+    no = item["inquiry_no"]
+    with st.container(key=f"hist_item_{no}"):
         body, action = st.columns([5, 1], vertical_alignment="center")
         with body:
             render_html(f"""
-                <div class="hist-top">{badge(customer_status(item))}{type_pill(item["type"])}
-                  <span class="hist-id">#{item["id"]}</span></div>
-                <p class="hist-question">{escape(first_question(item))}</p>
-                <div class="hist-time">{icon("clock")}<span>최근 대화 {latest_activity(item):%Y.%m.%d %H:%M}</span></div>
+                <div class="hist-top">{badge(status_label(item))}{type_pill(category(item))}
+                  <span class="hist-id">#{escape(no)}</span></div>
+                <p class="hist-question">{escape(item.get("preview") or "")}</p>
+                <div class="hist-time">{icon("clock")}<span>최근 대화 {fmt_time(item.get("last_message_at") or item.get("created_at"))}</span></div>
             """)
         with action:
-            if st.button("보기", key=f"view_{item['id']}", width="stretch"):
-                go("customer_detail", id=item["id"])
+            if st.button("보기", key=f"view_{no}", width="stretch"):
+                go("customer_detail", id=no)

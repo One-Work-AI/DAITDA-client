@@ -2,7 +2,8 @@ import streamlit as st
 
 from components.ui import brand, icon, render_html
 from utils.navigation import HOME_PAGE, go
-from utils.session import current_user, login
+from utils.api import ApiError
+from utils.session import current_user, demo_login
 
 
 FEATURES = [
@@ -24,14 +25,19 @@ FEATURES = [
 ]
 
 
+# (버튼, 역할, 아이콘) → POST /api/demo/{역할}
 DEMO_ACCOUNTS = [
-    ("고객으로 체험", "customer@daitda.com", ":material/person:"),
-    ("관리자로 체험", "admin@daitda.com", ":material/admin_panel_settings:"),
+    ("고객으로 체험", "customer", ":material/person:"),
+    ("관리자로 체험", "admin", ":material/admin_panel_settings:"),
 ]
 
 
 def _go_home() -> None:
-    go(HOME_PAGE[current_user()["role"]])
+    go(HOME_PAGE.get(current_user()["role"], "customer_chat"))
+
+
+def _error(message: str) -> None:
+    render_html(f'<p class="field-error">{icon("circle-alert")}<span>{message}</span></p>')
 
 
 def render() -> None:
@@ -113,24 +119,7 @@ def render() -> None:
                     )
 
                 if submitted:
-                    if not email or not password:
-                        render_html(
-                            f'<p class="field-error">'
-                            f'{icon("circle-alert")}'
-                            "<span>이메일과 비밀번호를 모두 입력해주세요.</span>"
-                            "</p>"
-                        )
-
-                    elif login(email, password):
-                        _go_home()
-
-                    else:
-                        render_html(
-                            f'<p class="field-error">'
-                            f'{icon("circle-alert")}'
-                            "<span>이메일 또는 비밀번호가 올바르지 않습니다.</span>"
-                            "</p>"
-                        )
+                    _error("지금은 아래 체험 버튼으로만 입장할 수 있어요.")
 
                 render_html(
                     '<div class="login-divider">'
@@ -140,22 +129,22 @@ def render() -> None:
 
                 c1, c2 = st.columns(2)
 
-                for col, (label, email_, ic) in zip(
-                    (c1, c2),
-                    DEMO_ACCOUNTS,
-                ):
-                    if col.button(
-                        label,
-                        icon=ic,
-                        key=f"demo_{email_}",
-                        width="stretch",
-                    ):
-                        login(email_, "1234")
+                clicked = None
+                for col, (label, role, ic) in zip((c1, c2), DEMO_ACCOUNTS):
+                    if col.button(label, icon=ic, key=f"demo_{role}", width="stretch"):
+                        clicked = role
+
+                if clicked:
+                    try:
+                        demo_login(clicked)
+                    except ApiError as err:
+                        _error(err.message)
+                    else:
                         _go_home()
 
                 render_html(
                     f'<p class="login-hint">'
                     f'{icon("key-round")}'
-                    "<span>데모 계정 비밀번호는 1234입니다</span>"
+                    "<span>시연 기간에는 체험 버튼으로 바로 입장할 수 있어요</span>"
                     "</p>"
                 )

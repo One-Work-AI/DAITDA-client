@@ -1,44 +1,59 @@
-"""고객 문의 - ChatGPT 형태의 채팅 화면.
+"""고객 문의 
 
-- 메뉴로 들어올 때마다 항상 새 채팅(소개 인사만 보임)으로 시작
-- 진행 중인 예전 채팅은 [문의 내역 > 보기 > 이어서 채팅하기]에서 그 화면 그대로 이어서 진행
-- 첫 메시지 순간 문의가 공유 저장소에 저장됨 → 관리자 화면에 바로 표시
+- 메뉴로 들어오면 항상 새 채팅(소개 인사만 보임)으로 시작 → 첫 메시지 순간 문의 생성
+  (진행 중이던 채팅이 있으면 서버가 '새 채팅 시작'으로 종료·저장)
+- 예전 채팅은 [문의 내역 > 보기 > 이어서 채팅하기]로 들어올 때만 이어서 보여줌 (resume_chat_id)
+- 채팅 종료하기 = POST /close?reason=USER, 종료 후 '새 채팅하기' / '문의 목록 보기'
 """
 import streamlit as st
 
 from components.chat_panel import render_chat_panel
 from components.ui import page_header
-from utils.inquiry import end_chat
-from utils.session import current_user, get_inquiry
+from utils import api
+from utils.api import ApiError
+from utils.inquiry import is_closed
+from utils.navigation import go
+from utils.session import run_action, show_error
 
 
 def _current_chat() -> dict | None:
-    if st.session_state.get("page_entered"):   
-        st.session_state.chat_id = None
+    if st.session_state.get("page_entered"):    
+        st.session_state.chat_id = st.session_state.pop("resume_chat_id", None)
         st.query_params.clear()
+
+    chat_id = st.session_state.get("chat_id")
+    if not chat_id:
         return None
-    inquiry = get_inquiry(st.session_state.get("chat_id"))
-    if inquiry is None or inquiry["customer"] != current_user()["name"]:
-        return None
-    return inquiry
-
-
-def _end(inquiry_id: str) -> None:
-    inquiry = get_inquiry(inquiry_id)
-    if inquiry:
-        end_chat(inquiry, "고객 종료")
-
-
-def _new_chat_footer(inquiry: dict | None) -> None:
-    """상담이 끝난 뒤: 새 채팅하기."""
-    if st.button("새 채팅하기", icon=":material/add_comment:", type="primary", width="stretch", key="new_chat"):
+    try:
+        return api.get_conversation(chat_id)
+    except ApiError as err:
+        if err.status != 404:
+            show_error(err)
         st.session_state.chat_id = None
-        st.rerun()
+        return None
+
+
+def _end(inquiry_no: str) -> None:
+    ok, _ = run_action(api.close_conversation, inquiry_no, "USER")
+    if ok:
+        st.toast("채팅을 종료했어요. 문의 내역에서 다시 확인할 수 있어요.", icon=":material/check_circle:")
+
+
+def _new_chat() -> None:
+    st.session_state.chat_id = None
+
+
+def _ended_footer(inquiry: dict | None) -> None:
+    c1, c2 = st.columns(2)
+    c1.button("새 채팅하기", icon=":material/add_comment:", type="primary", width="stretch",
+              key="new_chat", on_click=_new_chat)
+    if c2.button("문의 목록 보기", icon=":material/receipt_long:", width="stretch", key="go_history"):
+        go("customer_inquiries")
 
 
 def render() -> None:
     inquiry = _current_chat()
-    ended = bool(inquiry) and inquiry.get("chat_state") == "ended"
+    ended = is_closed(inquiry)
 
     head_left, head_right = st.columns([4, 1], vertical_alignment="bottom")
     with head_left:
@@ -46,7 +61,7 @@ def render() -> None:
     with head_right:
         if inquiry and not ended:
             st.button("채팅 종료하기", icon=":material/logout:", key="end_chat", width="stretch",
-                      on_click=_end, args=(inquiry["id"],))
+                      on_click=_end, args=(inquiry["inquiry_no"],))
 
     render_chat_panel(inquiry, interactive=True, show_welcome=True,
-                      footer=_new_chat_footer if ended else None)
+                      footer=_ended_footer if ended else None)
