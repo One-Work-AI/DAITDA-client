@@ -2945,12 +2945,28 @@ div[role="dialog"] {
   padding-left: 6px;
 }
 
+/* 문의 내역: 목록 카드를 사이드바 아래 끝까지 맞추고, 카드 안에서만 스크롤 */
 @media (min-width: 641px) {
+  .st-key-main:has(.st-key-card_history_list) {
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  /* 본문과 목록 카드 사이에 있는 감싸는 칸들: 남은 높이를 채우고 줄어들 수 있게 */
+  .st-key-main:has(.st-key-card_history_list)
+    :is([data-testid="stLayoutWrapper"], [data-testid="stVerticalBlock"]):has(.st-key-card_history_list) {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  /* 목록 카드: 남은 높이를 꽉 채우고, 넘치면 카드 안에서 스크롤 */
   .st-key-card_history_list {
-    flex: none !important;
+    flex: 1 1 0 !important;
     height: auto !important;
-    max-height: calc(100dvh - 390px) !important;  
+    min-height: 0 !important;
+    max-height: none !important;
     overflow-y: auto !important;
   }
-  .st-key-card_history_list > { flex-shrink: 0 !important; }
+  .st-key-card_history_list > * { flex-shrink: 0 !important; }
 }
