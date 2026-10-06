@@ -2944,3 +2944,13 @@ div[role="dialog"] {
 .st-key-card_history_list .table-caption {
   padding-left: 6px;
 }
+
+@media (min-width: 641px) {
+  .st-key-card_history_list {
+    flex: none !important;
+    height: auto !important;
+    max-height: calc(100dvh - 390px) !important;  
+    overflow-y: auto !important;
+  }
+  .st-key-card_history_list > { flex-shrink: 0 !important; }
+}
