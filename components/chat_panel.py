@@ -25,7 +25,7 @@ def _quick(prompt: str) -> None:
     st.session_state.quick_prompt = prompt
 
 
-@st.fragment(run_every=5)
+@st.fragment(run_every=1)   # 남은 시간을 1초마다 갱신 (서버 요청 없이 auto_close_at으로 계산)
 def _auto_close_hint(inquiry_no: str | None, auto_close_at: str | None, review_pending: bool) -> None:
     if review_pending:
         ic, msg = "pause", "담당자 확인 중인 질문이 있어 자동 종료되지 않아요."
@@ -35,6 +35,7 @@ def _auto_close_hint(inquiry_no: str | None, auto_close_at: str | None, review_p
         if left is None:
             msg = "답변 후 5분 동안 메시지가 없으면 채팅이 자동 종료돼요."
         elif left == 0:
+            # 시간이 다 됨 → 조회하면 서버가 바로 종료 처리 → 화면 전체를 다시 그려 종료 화면으로
             try:
                 closed = inquiry_no and is_closed(api.get_conversation(inquiry_no))
             except ApiError:
@@ -50,7 +51,7 @@ def _auto_close_hint(inquiry_no: str | None, auto_close_at: str | None, review_p
 def _order_picker() -> None:
     """새 채팅에서만: 문의할 주문 상품 선택 (주문이 없거나 조회 실패면 표시 안 함)."""
     orders = st.session_state.get("_orders_cache")
-    if orders is None:                  
+    if orders is None:                    # 주문 목록은 로그인 동안 한 번만 불러옴 (속도)
         try:
             orders = api.list_orders()
         except ApiError:
@@ -94,10 +95,16 @@ def render_chat_panel(
     show_date: bool = False,
     footer: Callable[[dict | None], None] | None = None,
 ) -> None:
+    """채팅창 하나를 그림.
 
+    interactive=True  : 입력창/빠른 질문까지 동작 (종료되지 않은 채팅일 때만)
+    interactive=False : 대화 내용만 보여줌 (입력 없음)
+    footer            : 카드 아래에 그릴 버튼 등
+    """
     ended = is_closed(inquiry)
     live = interactive and not ended
 
+    # 진행 중이거나, 종료됐어도 담당자 답변을 기다리는 채팅이면 변화를 자동 반영
     if inquiry and (not ended or is_review_pending(inquiry)):
         no = inquiry["inquiry_no"]
         live_watch(f"chat_{no}", lambda: change_signature(api.get_conversation(no)), initial=change_signature(inquiry))
@@ -148,9 +155,9 @@ def _send(inquiry: dict | None, prompt: str, box) -> None:
     with box:
         render_html(bubble_html({"role": "customer", "content": prompt}))
         pending = st.empty()
-        pending.markdown(typing_bubble_html(), unsafe_allow_html=True)  
+        pending.markdown(typing_bubble_html(), unsafe_allow_html=True)   # 답변 대기 말풍선
     try:
-        if inquiry is None:                     
+        if inquiry is None:                      # 첫 메시지 → 문의 생성 (+ 고른 주문 상품)
             result = api.start_conversation(prompt, st.session_state.get("chat_order_no"))
         else:
             result = api.send_message(inquiry["inquiry_no"], prompt)
@@ -159,6 +166,7 @@ def _send(inquiry: dict | None, prompt: str, box) -> None:
         if err.unauthorized:
             logout()
             go("login")
+        # CONVERSATION_CLOSED 등: 안내만 하고, 종료 상태는 자동 갱신으로 화면에 반영됨
         st.toast(err.message, icon=":material/error:")
         return
     st.session_state.chat_id = result["inquiry_no"]

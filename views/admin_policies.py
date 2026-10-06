@@ -118,11 +118,13 @@ def _render_left(policies: list[dict], selected: dict | None) -> None:
                 state = "-selected" if selected and p["id"] == selected["id"] else ""
                 with st.container(key=f"policyitem{state}-{p['id']}"):
                     c1, c2 = st.columns([6, 1], vertical_alignment="center")
-                    c1.button(p.get("title") or p.get("filename") or "-", icon=":material/picture_as_pdf:", key=f"pol_sel_{p['id']}",
-                              type="tertiary", width="stretch", on_click=_select, args=(p["id"],))
+                    with c1:   # 제목 + 파일 정보를 한 칸에 → 휴지통이 항목 전체의 세로 가운데에 옴
+                        st.button(p.get("title") or p.get("filename") or "-", icon=":material/picture_as_pdf:",
+                                  key=f"pol_sel_{p['id']}", type="tertiary", width="stretch",
+                                  on_click=_select, args=(p["id"],))
+                        render_html(f'<p class="policy-meta">{escape(_meta(p))}</p>')
                     c2.button("", icon=":material/delete:", key=f"pol_del_{p['id']}", type="tertiary",
                               help="문서 삭제", on_click=_delete, args=(p["id"],))
-                    render_html(f'<p class="policy-meta">{escape(_meta(p))}</p>')
 
         with st.container(key="pdf_upload_area"):
             render_html(f'<p class="field-label">{icon("upload")}<span>새 PDF 등록</span></p>')

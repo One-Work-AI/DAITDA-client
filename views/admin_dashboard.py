@@ -1,3 +1,4 @@
+"""관리자 - 운영 대시보드. 화면 구성은 그대로, 데이터는 GET /api/admin/dashboard (전체 기간)."""
 from datetime import datetime, timedelta, timezone
 from html import escape
 
@@ -11,7 +12,7 @@ from utils.inquiry import categories
 from utils.live import live_watch
 from utils.session import load
 
-BUSINESS_HOURS = range(9, 18)  
+BUSINESS_HOURS = range(9, 18)   # 09:00 ~ 18:00 (9시 ~ 17시 막대)
 
 
 def now() -> datetime:
@@ -88,7 +89,7 @@ def _render_hourly(data: dict) -> None:
               f'<span class="dot" style="background:{DONE_COLOR}"></span>처리완료</span>')
     with st.container(key="card_hourly"):
         card_title("시간대별 인입 및 처리 현황", subtitle="영업시간 (09:00 ~ 18:00)", right=legend)
-        st.altair_chart(_hourly_chart(data), width="stretch")
+        st.altair_chart(_hourly_chart(data), width="stretch", height="stretch")   # 카드 남은 높이를 채움
         peak = _peak_alert(data)
         if peak:
             render_html(f'<div class="alert-box">{icon("info")}<span><b>피크 타임 알림:</b> {peak}</span></div>')
@@ -135,5 +136,5 @@ def _hourly_chart(data: dict) -> alt.LayerChart:
         tooltip=[alt.Tooltip("hour", title="시간"), alt.Tooltip("kind", title="구분"),
                  alt.Tooltip("count", title="건수")],
     )
-    return (alt.layer(band, bars, label).properties(height=230)
+    return (alt.layer(band, bars, label).properties(height="container")
             .configure_view(strokeWidth=0).configure_axis(grid=False, labelColor="#6b7280"))
