@@ -60,7 +60,7 @@ LAYOUT_TWEAKS = """
 [class="st-key-policyitem"] [class="st-key-poldel"] button [data-testid="stIconMaterial"] { font-size: 1.4rem; }
 [class="st-key-policyitem"] [class="st-key-poldel"] button:hover { background: var(--color-surface); }
 """
-
+ 
 
 def load_global_styles() -> None:
     css = STYLE_PATH.read_text(encoding="utf-8")
