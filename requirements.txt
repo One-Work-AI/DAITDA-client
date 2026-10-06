@@ -1,3 +1,5 @@
 streamlit[pdf]>=1.50
 pandas
 altair>=5
+requests
+pypdfium2
